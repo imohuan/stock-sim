@@ -1,6 +1,6 @@
 {
   "name": "@axtools/stock-sim",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A股模拟交易应用 — 一键启动，实时行情、K线图表、自选股管理",
   "type": "module",
   "bin": {
