@@ -1,0 +1,19 @@
+# 源码
+src/
+server/
+docs/
+public/
+
+# 配置
+tsconfig.json
+vite.config.ts
+*.tsbuildinfo
+
+# 依赖锁文件（npm 安装时需要 package-lock.json）
+bun.lock
+
+# 其他
+*.md
+!README.md
+image.png
+.workbuddy/

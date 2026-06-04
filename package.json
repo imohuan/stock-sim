@@ -1,22 +1,36 @@
 {
   "name": "stock-sim",
-  "private": true,
   "version": "0.0.1",
+  "description": "A股模拟交易应用 — 一键启动，实时行情、K线图表、自选股管理",
   "type": "module",
+  "bin": {
+    "stock-sim": "bin/server.mjs"
+  },
+  "files": [
+    "bin/",
+    "dist/"
+  ],
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx server/index.ts",
     "dev:all": "concurrently \"npm run dev:server\" \"npm run dev\"",
     "build": "vue-tsc -b && vite build",
+    "build:npm": "BUILD_MODE=npm vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
     "@floating-ui/dom": "^1.7.6",
     "@floating-ui/vue": "^1.1.11",
     "@fontsource/geist": "^5.2.9",
     "@fontsource/jetbrains-mono": "^5.2.8",
+    "@tailwindcss/forms": "^0.5.11",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/vue-table": "^8.21.3",
+    "@types/node": "^25.9.1",
+    "@vitejs/plugin-vue": "^6.0.6",
     "@vueuse/core": "^14.3.0",
     "concurrently": "^10.0.3",
     "dayjs": "^1.11.13",
@@ -26,17 +40,12 @@
     "material-symbols": "^0.44.10",
     "pinia": "^3.0.2",
     "tailwindcss": "^4.3.0",
-    "vue": "^3.5.34",
-    "vue-echarts": "^8.0.1",
-    "vue-sonner": "^2.0.9"
-  },
-  "devDependencies": {
-    "@tailwindcss/forms": "^0.5.11",
-    "@types/node": "^25.9.1",
-    "@vitejs/plugin-vue": "^6.0.6",
     "tsx": "^4.22.4",
     "typescript": "~6.0.2",
     "vite": "^8.0.12",
+    "vue": "^3.5.34",
+    "vue-echarts": "^8.0.1",
+    "vue-sonner": "^2.0.9",
     "vue-tsc": "^3.2.8"
   }
 }
