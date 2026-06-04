@@ -1,6 +1,9 @@
-# 源码
+# 源码（排除 westock-data，它已通过 files 字段单独包含）
 src/
-server/
+server/index.ts
+server/stockApi.ts
+server/tsconfig.json
+scripts/
 docs/
 public/
 

@@ -5,20 +5,29 @@
 import { execFile } from 'child_process'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { existsSync } from 'fs'
 import type { IncomingMessage, ServerResponse } from 'http'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 // ---- westock-data CLI 配置 ----
-// const NODE_EXE = 'C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2/node.exe'
-// const WESTOK_SCRIPT =
-//   'C:/Users/Administrator/.workbuddy/plugins/marketplaces/cb_teams_marketplace/plugins/finance-data/skills/westock-data/scripts/index.js'
-// const WESTOK_CWD =
-//   'C:/Users/Administrator/.workbuddy/plugins/marketplaces/cb_teams_marketplace/plugins/finance-data/skills/westock-data'
+// 支持两种运行模式：dev (tsx) 和 compiled (esbuild bundle)
+function findWestockHome(): string {
+  const candidates = [
+    path.resolve(__dirname, 'westock-data'),                             // dev: server/westock-data
+    path.resolve(__dirname, '../../server/westock-data'),                // compiled: dist/server/ → ../../server/westock-data
+  ]
+  for (const c of candidates) {
+    if (existsSync(path.join(c, 'index.js'))) return c
+  }
+  return candidates[0] // 回退到 dev 路径
+}
+
+const WESTOK_HOME = findWestockHome()
 const NODE_EXE = 'node'
-const WESTOK_SCRIPT = path.resolve(__dirname, 'westock-data/index.js')
-const WESTOK_CWD = path.resolve(__dirname, 'westock-data')
+const WESTOK_SCRIPT = path.join(WESTOK_HOME, 'index.js')
+const WESTOK_CWD = WESTOK_HOME
 
 // ---- 工具函数 ----
 

@@ -29,3 +29,4 @@ dist-ssr
 dist-cdn/*
 # !dist-cdn/axiom-ui.umd.js
 # !dist-cdn/axiom-ui.es.js
+bin/.stock-sim.pid

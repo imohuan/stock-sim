@@ -1,100 +1,29 @@
 #!/usr/bin/env node
 /**
- * stock-sim CLI — A股模拟交易应用
+ * stock-sim CLI — A股模拟交易应用 管理脚本
  *
- *   start         启动服务
+ *   start         后台启动服务
  *   stop          停止服务
- *   help          显示帮助（默认）           stock-sim help
+ *   restart       重启服务（先停后启）
+ *   help          显示帮助（默认）
+ *
+ * 实际服务由 dist/server/index.js 提供（前后端一体）。
  */
 import { Command } from 'commander'
-import { createServer } from 'node:http'
-import { readFile, writeFile, access, unlink } from 'node:fs/promises'
-import { join, extname, dirname, resolve } from 'node:path'
+import { spawn } from 'node:child_process'
+import { readFile, writeFile, unlink, access } from 'node:fs/promises'
+import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { constants } from 'node:fs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const DIST = join(__dirname, '..', 'dist')
+const ROOT = resolve(__dirname, '..')
+const SERVER_SCRIPT = join(ROOT, 'dist', 'server', 'index.js')
 const PID_FILE = resolve(__dirname, '.stock-sim.pid')
-
-// ---- 静态文件 MIME ----
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.mjs': 'application/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-}
-
-// ---- 静态文件服务 ----
-async function sendFile(res, filePath) {
-  const resolved = join(DIST, filePath)
-  if (!resolved.startsWith(DIST)) {
-    res.statusCode = 403
-    res.end('Forbidden')
-    return
-  }
-
-  try {
-    await access(resolved, constants.R_OK)
-    const content = await readFile(resolved)
-    const ext = extname(resolved).toLowerCase()
-    res.setHeader('Content-Type', MIME[ext] || 'application/octet-stream')
-    res.setHeader('Cache-Control', 'public, max-age=3600')
-    res.statusCode = 200
-    res.end(content)
-  } catch {
-    // 404 → SPA 回退到 index.html
-    try {
-      const html = await readFile(join(DIST, 'index.html'))
-      res.setHeader('Content-Type', 'text/html; charset=utf-8')
-      res.statusCode = 200
-      res.end(html)
-    } catch {
-      res.statusCode = 404
-      res.end('Not Found')
-    }
-  }
-}
-
-// ---- API 代理（无 westock-data 时返回提示） ----
-function handleApi(res) {
-  res.statusCode = 503
-  res.setHeader('Content-Type', 'application/json; charset=utf-8')
-  res.end(JSON.stringify({
-    error: 'stock-api 不可用',
-    hint: '股票数据 API 需要本地安装 westock-data CLI',
-  }))
-}
-
-// ---- 创建 HTTP 服务 ----
-function createApp() {
-  return createServer((req, res) => {
-    try {
-      const url = new URL(req.url ?? '/', `http://localhost`)
-      const pathname = url.pathname
-
-      if (pathname.startsWith('/api/stock')) return handleApi(res)
-
-      const filePath = pathname === '/' ? '/index.html' : pathname
-      sendFile(res, filePath)
-    } catch {
-      res.statusCode = 500
-      res.end('Internal Server Error')
-    }
-  })
-}
 
 // ---- 进程检查 ----
 function isProcessRunning(pid) {
   try {
-    // 发信号 0 只检查进程是否存在，不实际发送信号
     process.kill(pid, 0)
     return true
   } catch {
@@ -102,101 +31,120 @@ function isProcessRunning(pid) {
   }
 }
 
-// ---- 清理 PID 文件 ----
+// ---- PID 文件操作 ----
+async function readPidFile() {
+  const raw = await readFile(PID_FILE, 'utf-8')
+  return parseInt(raw.trim(), 10)
+}
+
 async function removePidFile() {
-  try { await unlink(PID_FILE) } catch { /* 不存在就忽略 */ }
+  try { await unlink(PID_FILE) } catch { /* 不存在忽略 */ }
+}
+
+async function writePid(pid) {
+  await writeFile(PID_FILE, String(pid))
 }
 
 // ---- start 命令 ----
 async function cmdStart(port) {
   // 检查是否已在运行
   try {
-    const raw = await readFile(PID_FILE, 'utf-8')
-    const pid = parseInt(raw.trim(), 10)
+    const pid = await readPidFile()
     if (pid && isProcessRunning(pid)) {
       console.log(`\n  ⚠ 服务已在运行 (PID: ${pid})`)
       console.log(`  停止: stock-sim stop\n`)
       process.exit(1)
     }
-    // PID 文件在但进程已死 → 清理
     await removePidFile()
   } catch { /* 无 PID 文件，正常 */ }
 
-  const app = createApp()
+  // 检查 server 脚本是否存在
+  try {
+    await access(SERVER_SCRIPT, constants.R_OK)
+  } catch {
+    console.log(`\n  ✗ 找不到服务脚本: ${SERVER_SCRIPT}`)
+    console.log('  请先运行 npm run build:npm\n')
+    process.exit(1)
+  }
 
-  return new Promise((resolvePromise, reject) => {
-    app.listen(port, () => {
-      const banner = `
+  // 后台 spawn 服务进程
+  const child = spawn('node', [SERVER_SCRIPT, String(port)], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  })
+
+  child.unref() // 不阻塞父进程
+
+  await writePid(child.pid)
+
+  const text = String(port)
+  console.log(`
 ╔══════════════════════════════════════════════╗
 ║   A股模拟交易  ·  启动成功                   ║
 ║                                              ║
-║   地址:   http://localhost:${port}               ║
-║   PID:    ${process.pid}                           ║
+║   地址:     http://localhost:${text.padEnd(5)}             ║
+║   PID:      ${String(child.pid).padEnd(5)}                         ║
 ║   PID 文件: ${PID_FILE}
 ║                                              ║
-║   停止:   stock-sim stop                      ║
+║   停止:     stock-sim stop                    ║
 ╚══════════════════════════════════════════════╝
-`
-      console.log(banner)
+`)
 
-      // 写 PID 文件
-      writeFile(PID_FILE, String(process.pid)).catch(() => {})
-
-      // 清理退出
-      const cleanup = async () => {
-        await removePidFile()
-        app.close()
-        process.exit(0)
-      }
-
-      process.on('SIGINT', cleanup)
-      process.on('SIGTERM', cleanup)
-      process.on('beforeExit', () => removePidFile())
-
-      resolvePromise()  // commander 的 action 完成，但不退出进程
-    })
-
-    app.on('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        console.log(`\n  ✗ 端口 ${port} 已被占用`)
-        console.log(`  请先运行 stock-sim stop 或更换端口: stock-sim start --port ${port + 1}\n`)
-        process.exit(1)
-      }
-      reject(err)
-    })
-  })
+  // spawn 完成，进程退出（服务在后台运行）
 }
 
 // ---- stop 命令 ----
-async function cmdStop() {
+/**
+ * @returns {boolean} true 表示停止成功
+ */
+async function tryStop() {
   let pid
   try {
-    const raw = await readFile(PID_FILE, 'utf-8')
-    pid = parseInt(raw.trim(), 10)
+    pid = await readPidFile()
   } catch {
-    console.log('\n  ✗ 未找到运行中的服务（PID 文件不存在）\n')
-    process.exit(1)
+    return false // 无 PID 文件 = 未运行
   }
 
   if (!pid || !isProcessRunning(pid)) {
-    console.log('\n  ✗ PID 文件存在但进程已不在运行，已清理\n')
     await removePidFile()
-    process.exit(1)
+    return false // 进程已死
   }
-
-  console.log(`\n  正在停止服务 (PID: ${pid})...`)
 
   try {
     process.kill(pid, 'SIGTERM')
-    // 等待进程退出
-    await new Promise((resolveKill) => setTimeout(resolveKill, 500))
+    await new Promise((r) => setTimeout(r, 500))
     await removePidFile()
-    console.log('  ✓ 服务已停止\n')
-  } catch (err) {
-    console.log(`  ✗ 无法停止进程: ${err.message}`)
-    console.log(`    请手动终止: taskkill /F /PID ${pid}\n`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function cmdStop() {
+  const running = await tryStop()
+
+  if (running) {
+    console.log('\n  ✓ 服务已停止\n')
+  } else {
+    // 确认是否真的没在运行
+    try {
+      await readPidFile()
+      console.log('\n  ✗ PID 文件存在但进程已不在运行，已清理\n')
+    } catch {
+      console.log('\n  ✗ 未找到运行中的服务（PID 文件不存在）\n')
+    }
     process.exit(1)
   }
+}
+
+// ---- restart 命令 ----
+async function cmdRestart(port) {
+  const wasRunning = await tryStop()
+  if (wasRunning) {
+    console.log('  ✓ 已停止旧服务')
+  }
+  await cmdStart(port)
 }
 
 // ---- CLI 定义 ----
@@ -211,11 +159,13 @@ program
   stock-sim start              默认端口 5180 启动
   stock-sim start --port 3000  指定端口启动
   stock-sim stop               停止服务
+  stock-sim restart            重启服务
+  stock-sim restart --port 3000 指定端口重启
 `)
 
 program
   .command('start')
-  .description('启动服务')
+  .description('后台启动服务')
   .option('-p, --port <port>', '监听端口', '5180')
   .action(async (opts) => {
     const port = parseInt(opts.port, 10)
@@ -224,7 +174,7 @@ program
       process.exit(1)
     }
     await cmdStart(port)
-    // 不退出进程 — server.listen 保持事件循环
+    // 函数返回后进程自然退出
   })
 
 program
@@ -232,7 +182,19 @@ program
   .description('停止服务')
   .action(() => cmdStop())
 
-// 默认显示帮助
+program
+  .command('restart')
+  .description('重启服务（先停后启）')
+  .option('-p, --port <port>', '监听端口', '5180')
+  .action(async (opts) => {
+    const port = parseInt(opts.port, 10)
+    if (isNaN(port) || port < 1 || port > 65535) {
+      console.log('\n  ✗ 非法端口号，范围: 1-65535\n')
+      process.exit(1)
+    }
+    await cmdRestart(port)
+  })
+
 program
   .command('help')
   .description('显示帮助')
@@ -242,7 +204,6 @@ program
 const args = process.argv.slice(2)
 
 if (args.length === 0) {
-  // 无参数 → 显示帮助
   program.help()
 } else {
   program.parse()
