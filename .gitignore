@@ -23,6 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
+.codegraph
+.codebuddy
+
 dist-cdn/*
 # !dist-cdn/axiom-ui.umd.js
 # !dist-cdn/axiom-ui.es.js
