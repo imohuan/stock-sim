@@ -71,6 +71,14 @@ export function createStockApp() {
       const url = new URL(req.url ?? '/', 'http://localhost')
       const pathname = url.pathname
 
+      // 服务标识接口（用于 kill 命令识别）
+      if (pathname === '/info') {
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+        res.end('stock-sim')
+        return
+      }
+
       // 后端 API
       if (pathname.startsWith('/api/stock')) {
         const savedUrl = req.url
